@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JAJA'S FOCUS TIMER</title>
+<style>
+body {
+  margin:0;
+  font-family:"Times New Roman", Times, serif;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  min-height:100vh;
+  background: linear-gradient(#87ceeb,#e8f5e9);
+  transition: background 2s;
+  overflow:hidden;
+}
+
+/* Stars */
+.stars {
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity 2s;
+}
+.star {
+  position:absolute;
+  color:white;
+  font-size:12px;
+  animation: twinkle 3s infinite ease-in-out;
+}
+@keyframes twinkle {
+  0% {opacity:0.2; transform:scale(0.8);}
+  50% {opacity:1; transform:scale(1);}
+  100% {opacity:0.2; transform:scale(0.8);}
+}
+
+.app {
+  background: rgba(255,255,255,0.85);
+  padding:20px;
+  border-radius:15px;
+  margin-top:20px;
+  text-align:center;
+  width:450px;
+  box-shadow:0 8px 20px rgba(0,0,0,0.2);
+  position:relative;
+}
+
+.timerInput { width:50px; text-align:center; font-size:16px; margin:0 3px; }
+
+button { margin:5px; padding:10px 18px; border:none; border-radius:10px; cursor:pointer; font-size:16px;}
+button.start{background:#4caf50;color:white;} 
+button.pause{background:#ffa000;color:white;}
+button.stop{background:#e53935;color:white;}
+button.soundToggle{background:#3498db;color:white;}
+button.dayNightToggle{background:#9c27b0;color:white;}
+
+select { padding:6px; margin:10px 0; font-size:16px; }
+
+#animationArea {
+  position: relative;
+  height:250px;
+  width:100%;
+  margin:20px 0;
+  overflow:hidden;
+  border-radius:15px;
+  border:1px solid #ccc;
+  font-size:50px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+/* Water Glass */
+.glass {
+  position:absolute;
+  bottom:0;
+  width:60px;
+  height:120px;
+  border:3px solid #555;
+  border-radius:0 0 10px 10px;
+  overflow:hidden;
+}
+.water {
+  position:absolute;
+  bottom:0;
+  width:100%;
+  height:0;
+  background:#3498db;
+  transition: height 1s linear;
+}
+
+/* Bubble animation */
+.bubble {
+  position: absolute;
+  bottom: 0;
+  width: 6px;
+  height: 6px;
+  background: rgba(255,255,255,0.7);
+  border-radius: 50%;
+  animation: rise 3s infinite ease-in-out;
+}
+@keyframes rise {
+  0% { transform: translateY(0); opacity:1; }
+  100% { transform: translateY(-120px); opacity:0; }
+}
+
+/* Pause note */
+#pauseNote {
+  position:absolute;
+  top:10px;
+  right:10px;
+  font-size:14px;
+  color:#555;
+  display:block;
+  text-align:right;
+  line-height:1.4;
+}
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<div class="app">
+  <h2>JAJA'S FOCUS TIMER</h2>
+
+  <select id="animationSelect" onchange="createAnimation(this.value)">
+    <option value="sunMoon">Sun/Moon 🌞🌙</option>
+    <option value="water">Water 💧</option>
+  </select>
+  <button class="dayNightToggle" onclick="manualDayNight()">Day/Night</button>
+
+  <div id="animationArea">
+    <span id="emojiDisplay">🌞</span>
+  </div>
+
+  <div style="margin-top:10px;">
+    Hours: <input type="number" id="hours" class="timerInput" min="0" value="0">
+    Minutes: <input type="number" id="minutes" class="timerInput" min="0" max="59" value="0">
+    Seconds: <input type="number" id="seconds" class="timerInput" min="0" max="59" value="0">
+  </div>
+
+  <button class="start" onclick="startTimer()">Start</button>
+  <button class="pause" onclick="pauseTimer()">Pause</button>
+  <button class="stop" onclick="stopTimer()">Stop</button>
+  <button class="soundToggle" onclick="toggleSound()">🔊</button>
+
+  <div id="timerDisplay" style="font-size:22px;margin-top:10px;">00:00:00</div>
+
+  <div id="pauseNote">
+    Click pause again to play<br>
+    If timer goes too fast refresh page
+  </div>
+</div>
+
+<audio id="windSound" src="wind.mp3" loop></audio>
+<audio id="rainSound" src="rain.mp3" loop></audio>
+
+<script>
+// Stars
+const starsContainer = document.getElementById('stars');
+for(let i=0;i<50;i++){
+  const star=document.createElement('div');
+  star.className='star';
+  star.textContent='✦';
+  star.style.left=Math.random()*100+'vw';
+  star.style.top=Math.random()*100+'vh';
+  star.style.animationDelay=Math.random()*3+'s';
+  star.style.fontSize=(Math.random()*6+8)+'px';
+  starsContainer.appendChild(star);
+}
+
+let totalTime=0, timeLeft=0, interval=null, running=false, paused=false, soundOn=true;
+let dayMode=true;
+const timerDisplay=document.getElementById('timerDisplay');
+let currentAnim=document.getElementById('emojiDisplay');
+const animationSelect=document.getElementById('animationSelect');
+
+const wind=document.getElementById('windSound');
+const rain=document.getElementById('rainSound');
+
+// Timer helpers
+function getTotalSeconds(){
+  const h=parseInt(document.getElementById('hours').value)||0;
+  const m=parseInt(document.getElementById('minutes').value)||0;
+  const s=parseInt(document.getElementById('seconds').value)||0;
+  return h*3600 + m*60 + s;
+}
+function formatTime(seconds){
+  const h=Math.floor(seconds/3600);
+  const m=Math.floor((seconds%3600)/60);
+  const s=seconds%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// Animation Creation
+function createAnimation(type){
+  const animArea=document.getElementById('animationArea');
+  animArea.innerHTML='';
+  if(type==='water'){
+    const glass=document.createElement('div');
+    glass.className='glass';
+    const water=document.createElement('div');
+    water.className='water';
+    glass.appendChild(water);
+    animArea.appendChild(glass);
+    currentAnim=water;
+    createBubbles(15);
+  } else if(type==='sunMoon'){
+    const emoji=document.createElement('span');
+    emoji.id='emojiDisplay';
+    emoji.textContent='🌞';
+    emoji.style.fontSize='50px';
+    animArea.appendChild(emoji);
+    currentAnim=emoji;
+    resetDayMode();
+  }
+}
+
+// Reset to full day mode
+function resetDayMode(){
+  dayMode=true;
+  document.body.style.background='linear-gradient(#87ceeb,#e8f5e9)';
+  starsContainer.style.opacity=0;
+  if(animationSelect.value==='sunMoon') currentAnim.textContent='🌞';
+}
+
+// Timer Functions
+function startTimer(){
+  totalTime=getTotalSeconds();
+  if(totalTime===0) return;
+  timeLeft=totalTime;
+  createAnimation(animationSelect.value);
+  running=true;
+  paused=false;
+  updateTimer();
+  playSound();
+  interval=setInterval(()=>{
+    if(paused) return;
+    timeLeft--;
+    if(timeLeft<0){ stopTimer(); resetDayMode(); return; }
+    updateTimer();
+    updateAnimation();
+  },1000);
+}
+
+// Fixed Pause Function
+function pauseTimer(){
+  if(!running) return;
+  paused = !paused;
+  if(paused){
+    wind.pause();
+    rain.pause();
+  } else {
+    if(soundOn) playSound();
+  }
+}
+
+function stopTimer(){
+  clearInterval(interval);
+  running=false; paused=false;
+  timeLeft=0;
+  updateTimer();
+  createAnimation(animationSelect.value);
+  resetDayMode();
+  stopSound();
+}
+
+// Manual Day/Night toggle
+function manualDayNight(){
+  dayMode=!dayMode;
+  document.body.style.background=dayMode?'linear-gradient(#87ceeb,#e8f5e9)':'linear-gradient(#0f2027,#203a43,#2c5364)';
+  starsContainer.style.opacity=dayMode?0:1;
+  if(animationSelect.value==='sunMoon'){
+    currentAnim.textContent=dayMode?'🌞':'🌙';
+  }
+}
+
+// Sound
+function toggleSound(){
+  soundOn=!soundOn;
+  if(soundOn) playSound();
+  else stopSound();
+}
+function playSound(){ if(!soundOn) return; wind.play(); rain.play(); }
+function stopSound(){ wind.pause(); wind.currentTime=0; rain.pause(); rain.currentTime=0; }
+
+// Update Timer display
+function updateTimer(){ timerDisplay.textContent=formatTime(timeLeft); }
+
+// Update animation
+function updateAnimation(){
+  if(totalTime===0) return;
+  const progress=(totalTime-timeLeft)/totalTime;
+  if(animationSelect.value==='water'){
+    currentAnim.style.height=`${progress*100}%`;
+  } else if(animationSelect.value==='sunMoon'){
+    currentAnim.textContent=progress<0.5?'🌞':'🌙';
+    const r=Math.floor(135*(1-progress)+15*progress);
+    const g=Math.floor(206*(1-progress)+32*progress);
+    const b=Math.floor(235*(1-progress)+52*progress);
+    document.body.style.background=`rgb(${r},${g},${b})`;
+    starsContainer.style.opacity=progress>0.5?1:0;
+  }
+}
+
+// Bubbles
+function createBubbles(count=10){
+  if(animationSelect.value!=='water') return;
+  const glass = document.querySelector('.glass');
+  if(!glass) return;
+  document.querySelectorAll('.bubble').forEach(b => b.remove());
+  for(let i=0;i<count;i++){
+    const b=document.createElement('div');
+    b.className='bubble';
+    b.style.left=Math.random()*50+10+'px';
+    b.style.animationDuration=(2+Math.random()*2)+'s';
+    b.style.animationDelay=Math.random()*3+'s';
+    glass.appendChild(b);
+  }
+}
+
+animationSelect.addEventListener('change', ()=>{
+  if(animationSelect.value==='water') createBubbles(15);
+});
+
+// Automatically play sound on page load
+window.onload = ()=>{ playSound(); }
+
+createAnimation(animationSelect.value);
+</script>
+</body>
+</html>
